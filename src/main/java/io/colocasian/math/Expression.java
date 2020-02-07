@@ -1,5 +1,6 @@
 package io.colocasian.math;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
@@ -16,12 +17,14 @@ import java.util.Stack;
  */
 public class Expression {
     private HashMap<String, Double> vars;
+    private HashMap<String, String> funs;
 
     /**
      * Constructor for expression class. Initializes variable register.
      */
     public Expression() {
         this.vars = new HashMap<>();
+        this.funs = new HashMap<>();
     }
 
     /**
@@ -52,8 +55,9 @@ public class Expression {
      * @return the answer given by the formula
      * @throws NoSuchElementException if given formula description doesn't exist
      */
-    private static double solveFormula(String name, double[] params) throws NoSuchElementException {
-        switch (name + "#" + params.length) {
+    private double solveFormula(String name, double[] params) throws NoSuchElementException {
+        String formId = name + "#" + params.length;
+        switch (formId) {
             case "sin#1":
                 return Math.sin(params[0]);
             case "cos#1":
@@ -87,9 +91,50 @@ public class Expression {
             case "hypot#2":
                 return Math.hypot(params[0], params[1]);
 
+            case "signum#1":
+                return Math.signum(params[0]);
+
             default:
-                throw new NoSuchElementException("no such function yet");
+                if (funs.containsKey(formId))
+                    return this.solveCustomFormula(funs.get(formId), params);
+                else
+                    throw new NoSuchElementException("No such function defined");
         }
+    }
+
+    /**
+     * Method that solves user-defined formulae.
+     * @param formula the formula to be solved
+     * @param params the parameters
+     * @return the answer
+     */
+    private double solveCustomFormula(String formula, double[] params) {
+        for (int i = 0; i < params.length; i++)
+            formula = formula.replace("|" + Integer.toString(i) + "|",
+                    "(" + Double.toString(params[i]) + ")");
+        return this.evaluate(formula);
+    }
+
+    /**
+     * Method to be used to define new custom functions. Has built-in checks to only check function
+     * name, not the function itself. The formula must contain placeholders for the parameters,
+     * where the (zero-indexed) parameters replace "|<param>|", where param is the (zero-indexed)
+     * parameter ID.
+     * @param fName name of the formula
+     * @param paramNums number of parameters
+     * @param formula the formula itself, where placeholders for the parameters are writter as "|param#|", where param# is the param number
+     * @return whether assignment was successful
+     */
+    public boolean addFormula(String fName, int paramNums, String formula) {
+        if (fName.isEmpty() || (!isVar(fName.charAt(0))))
+            return false;
+        for (int i = 1; i < fName.length(); i++) {
+            char c = fName.charAt(i);
+            if ((!isVar(c)) && (c < '0' || c > '9'))
+                return false;
+        }
+        funs.put(fName + "#" + Integer.toString(paramNums), formula);
+        return true;
     }
 
     /**
@@ -245,6 +290,8 @@ public class Expression {
 
                 String varName = infix.substring(i, j);
                 if (j != infix.length() && infix.charAt(j) == '(') {
+                    ArrayList<Integer> stops = new ArrayList<>();
+                    stops.add(j);
                     int k = j+1;
                     int funcLvl = 1;
                     while (k != infix.length() && funcLvl != 0) {
@@ -255,18 +302,27 @@ public class Expression {
                             case ')':
                                 funcLvl--;
                                 break;
+                            case ',':
+                                if (funcLvl == 1)
+                                    stops.add(k);
+                                break;
                         }
                         k++;
                     }
-                    String[] paramStr = infix.substring(j+1, k-1).split(",");
-                    int paramNum = paramStr.length;
+                    if (funcLvl != 0)
+                        throw new ArithmeticException("Unclosed braces");
+
+                    stops.add(k-1);
+
+                    // String[] paramStr = infix.substring(j+1, k-1).split(",");
+                    int paramNum = stops.size() - 1;
                     double[] paramDbl = new double[paramNum];
 
                     for (int l = 0; l < paramNum; l++)
-                        paramDbl[l] = this.evaluate(paramStr[l]);
+                        paramDbl[l] = this.evaluate(infix.substring(stops.get(l)+1, stops.get(l+1)));
 
                     postfix.add('\0');
-                    nums.add(solveFormula(varName, paramDbl));
+                    nums.add(this.solveFormula(varName, paramDbl));
                     i = k-1;
                 }
                 else {
